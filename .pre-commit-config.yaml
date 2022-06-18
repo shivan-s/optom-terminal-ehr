@@ -35,3 +35,4 @@ repos:
       - id: go-unit-tests
       - id: go-build
       - id: go-mod-tidy
+# need to install go-lint go-imports go-cyclo golangci-lint go-critic
