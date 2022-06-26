@@ -2,76 +2,103 @@ package main
 
 import (
 	"fmt"
+	table "github.com/calyptia/go-bubble-table"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"net/http"
+	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
+	"optom-terminal-ehr/db"
 	"os"
-	"time"
 )
 
-const url = "https://charm.sh"
+type patients struct {
+	FirstName string
+	LastName  string
+}
 
 type model struct {
-	status int
-	err    error
+	viewtype int
+	table    table.Model
 }
 
-func checkServer() tea.Msg {
-	c := &http.Client{Timeout: 10 * time.Second}
-	res, err := c.Get(url)
+type keyMap struct {
+	Up key.Binding
+}
 
-	if err != nil {
-		return errMsg{err}
+var styleDoc = lipgloss.NewStyle().Padding(1)
+
+func initialModel() model {
+	pxs := []patients{
+		{FirstName: "One", LastName: "PatientOne"},
+		{FirstName: "Two", LastName: "PatientTwo"},
+		{FirstName: "Three", LastName: "PatientThree"},
+		{FirstName: "Four", LastName: "PatientFour"},
+		{FirstName: "Five", LastName: "PatientFive"},
+		{FirstName: "Six", LastName: "PatientSix"},
+		{FirstName: "Seven", LastName: "PatientSeven"},
+		{FirstName: "Eight", LastName: "PatientEight"},
 	}
-	return statusMsg(res.StatusCode)
+	w, h, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		w = 80
+		h = 24
+	}
+	top, right, bottom, left := styleDoc.GetPadding()
+	w = w - left - right
+	h = h - top - bottom
+	tbl := table.New([]string{"LASTNAME", "FIRSTNAME"}, w, h)
+	rows := make([]table.Row, len(pxs))
+	for i, px := range pxs {
+		rows[i] = table.SimpleRow{
+			px.FirstName,
+			px.LastName,
+		}
+	}
+	tbl.SetRows(rows)
+	return model{
+		table: tbl,
+	}
 }
-
-type statusMsg int
-
-type errMsg struct{ err error }
-
-func (e errMsg) Error() string { return e.err.Error() }
 
 func (m model) Init() tea.Cmd {
-	return checkServer
-
+	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-
-	case statusMsg:
-		m.status = int(msg)
-		return m, tea.Quit
-
-	case errMsg:
-		m.err = msg
-		return m, tea.Quit
-
+func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := message.(type) {
+	case tea.WindowSizeMsg:
+		top, right, bottom, left := styleDoc.GetPadding()
+		m.table.SetSize(
+			msg.Width-left-right,
+			msg.Height-top-bottom,
+		)
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+		switch msg.String() {
+		case "ctrl+c", "q":
 			return m, tea.Quit
 		}
 	}
-
-	return m, nil
-
+	var cmd tea.Cmd
+	m.table, cmd = m.table.Update(message)
+	return m, cmd
 }
 
 func (m model) View() string {
-	if m.err != nil {
-		return fmt.Sprintf("\nWe had some trouble: %v\n\n", m.err)
-	}
-	s := fmt.Sprintf("Checking %s ...", url)
-
-	if m.status > 0 {
-		s += fmt.Sprintf("%d %s!", m.status, http.StatusText(m.status))
-	}
-	return "\n" + s + "\n\n"
+	return styleDoc.Render(
+		m.table.View(),
+	)
 }
 
 func main() {
-	if err := tea.NewProgram(model{}).Start(); err != nil {
-		fmt.Printf("Uh oh, there was an error %v\n", err)
-		os.Exit(1)
+	_, err := db.SetUpDb()
+
+	if err != nil {
+		panic(err)
+	}
+
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	err = p.Start()
+	if err != nil {
+		_ = fmt.Errorf("Alas, there's been an error: %v", err)
 	}
 }
